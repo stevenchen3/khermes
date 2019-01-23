@@ -13,6 +13,7 @@ package com.stratio.khermes.commons.config
 import java.time.Duration
 
 import com.stratio.khermes.commons.constants.AppConstants
+import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 
 import scala.util.Try
@@ -32,8 +33,8 @@ case class AppConfig(khermesConfigContent: String,
                      template: String,
                      avroSchema: Option[String] = None) {
 
-  val khermesConfig = ConfigFactory.parseString(khermesConfigContent)
-  val kafkaConfig = ConfigFactory.parseString(kafkaConfigContent)
+  val khermesConfig: Config = ConfigFactory.parseString(khermesConfigContent)
+  val kafkaConfig: Config   = ConfigFactory.parseString(kafkaConfigContent)
 
   assertCorrectConfig()
 

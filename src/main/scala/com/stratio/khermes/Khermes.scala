@@ -39,10 +39,11 @@ object Khermes extends App with LazyLogging {
   createPaths
   MetricsReporter.start
 
-  val khermesSupervisor = workerSupervisor
+  // Create a NodeSupervisorActor as 'khermesSupervisor'
+  val khermesSupervisor: ActorRef = workerSupervisor
 
   if(config.getString("khermes.client") == "true") {
-    clientActor(khermesSupervisor)
+    clientActor(khermesSupervisor) // 'khermesSupervisor' is a redundant argument here
   }
 
   if(config.getString("khermes.ws") == "true") {
@@ -86,12 +87,16 @@ object Khermes extends App with LazyLogging {
                        executionContext: ExecutionContextExecutor): ActorRef =
     system.actorOf(Props(new NodeSupervisorActor()), "khermes-supervisor")
 
+  // Creates a 'KhermesClientActor' actor and sends 'Start' message to it
+  //
+  // 'config', 'system' and 'executionContext' are all implicit parameters
+  // and 'khermesSupervisor' is a redundant arugment
   def clientActor(khermesSupervisor: ActorRef)(implicit config: Config,
                                                system: ActorSystem,
                                                executionContext: ExecutionContextExecutor): Unit = {
 
     val clientActor = system.actorOf(Props(new KhermesClientActor()), "khermes-client")
-    clientActor ! KhermesClientActor.Start
+    clientActor ! KhermesClientActor.Start // sending a 'Start' message to 'clientActor'
   }
 
   def wsHttp()(implicit config: Config,
@@ -104,24 +109,26 @@ object Khermes extends App with LazyLogging {
         pathPrefix("css") {
           getFromResourceDirectory("web/css")
         } ~
-          pathPrefix("js") {
-            getFromResourceDirectory("web/js")
-          } ~
-          pathSingleSlash {
-              getFromResource("web/index.html")
-          } ~
-          path("console") {
-            getFromResource("web/console.html")
-          } ~
-          path("input") {
-            handleWebSocketMessages(WSFlow.inputFlow(commandCollector))
-          } ~
-          path("output") {
-            handleWebSocketMessages(WSFlow.outputFlow)
-          }
+        pathPrefix("js") {
+          getFromResourceDirectory("web/js")
+        } ~
+        pathSingleSlash {
+            getFromResource("web/index.html")
+        } ~
+        path("console") {
+          getFromResource("web/console.html")
+        } ~
+        path("input") {
+          handleWebSocketMessages(WSFlow.inputFlow(commandCollector))
+        } ~
+        path("output") {
+          handleWebSocketMessages(WSFlow.outputFlow)
+        }
       }
 
-    val host = Try(config.getString("khermes.ws.host")).getOrElse({
+    // 'Try(config.getString("khermes.ws.host"))' returns 'Try[String]' on success
+    // 'getOrElse' expects a by name argument
+    val host: String = Try(config.getString("khermes.ws.host")).getOrElse({
       logger.info("khermes.ws.host is not defined. Setting default: localhost")
       AppConstants.DefaultWSHost
     })

@@ -12,7 +12,7 @@ package com.stratio.khermes.cluster.supervisor
 
 import java.util.UUID
 
-import akka.actor.{Actor, ActorLogging}
+import akka.actor.{Actor, ActorLogging, ActorRef}
 import akka.cluster.pubsub.{DistributedPubSub, DistributedPubSubMediator}
 import com.stratio.khermes.cluster.supervisor.NodeSupervisorActor.Result
 import com.stratio.khermes.commons.config.AppConfig
@@ -37,14 +37,16 @@ class NodeSupervisorActor(implicit config: Config) extends Actor with ActorLoggi
 
   import DistributedPubSubMediator.Subscribe
 
-  val mediator = DistributedPubSub(context.system).mediator
+  val mediator: ActorRef = DistributedPubSub(context.system).mediator
   mediator ! Subscribe("content", self)
 
   var khermesExecutor: Option[NodeExecutorThread] = None
   val id = UUID.randomUUID.toString
 
-  val khermes = Faker(Try(config.getString("khermes.i18n")).toOption.getOrElse("EN"),
-    Try(config.getString("khermes.strategy")).toOption)
+  val khermes = Faker(
+    Try(config.getString("khermes.i18n")).toOption.getOrElse("EN"),
+    Try(config.getString("khermes.strategy")).toOption
+  )
 
   override def receive: Receive = {
     case NodeSupervisorActor.Start(ids, hc) =>

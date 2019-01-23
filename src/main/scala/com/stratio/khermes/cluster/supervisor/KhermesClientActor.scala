@@ -12,7 +12,7 @@ package com.stratio.khermes.cluster.supervisor
 
 import java.util.UUID
 
-import akka.actor.{ActorLogging, Props}
+import akka.actor.{ActorLogging, ActorRef, Props}
 import akka.cluster.pubsub.{DistributedPubSub, DistributedPubSubMediator}
 import akka.stream.actor.ActorPublisher
 import com.stratio.khermes.clients.shell.KhermesConsoleHelper
@@ -28,7 +28,7 @@ import scala.concurrent.Future
 class KhermesClientActor extends ActorPublisher[String] with ActorLogging {
 
   import DistributedPubSubMediator.Publish
-  val mediator = DistributedPubSub(context.system).mediator
+  val mediator: ActorRef = DistributedPubSub(context.system).mediator
 
   override def preStart: Unit = {
     context.system.eventStream.subscribe(self, classOf[String])
