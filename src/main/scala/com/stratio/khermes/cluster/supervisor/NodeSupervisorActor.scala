@@ -19,6 +19,7 @@ import com.stratio.khermes.commons.config.AppConfig
 import com.stratio.khermes.helpers.faker.Faker
 import com.stratio.khermes.helpers.twirl.TwirlHelper
 import com.stratio.khermes.metrics.KhermesMetrics
+import com.stratio.khermes.persistence.KhermesSink
 import com.stratio.khermes.persistence.kafka.KafkaClient
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.LazyLogging
@@ -27,6 +28,7 @@ import play.twirl.api.Txt
 import tech.allegro.schema.json2avro.converter.JsonAvroConverter
 
 import scala.annotation.tailrec
+import scala.concurrent.ExecutionContext
 import scala.util.Try
 
 /**
@@ -37,6 +39,7 @@ class NodeSupervisorActor(implicit config: Config) extends Actor with ActorLoggi
 
   import DistributedPubSubMediator.Subscribe
 
+  implicit val ec: ExecutionContext = context.dispatcher
   val mediator: ActorRef = DistributedPubSub(context.system).mediator
   mediator ! Subscribe("content", self)
 
@@ -89,13 +92,16 @@ class NodeSupervisorActor(implicit config: Config) extends Actor with ActorLoggi
  * @param hc     with the Hermes' configuration.
  * @param config with general configuration.
  */
-class NodeExecutorThread(hc: AppConfig)(implicit config: Config) extends NodeExecutable
+class NodeExecutorThread(hc: AppConfig)(implicit config: Config,
+  ec: ExecutionContext) extends NodeExecutable
   with LazyLogging with KhermesMetrics {
 
   val converter = new JsonAvroConverter()
   var running: Boolean = false
   val messageSentCounterMetric = getAvailableCounterMetrics("khermes-messages-count")
   val messageSentMeterMetric = getAvailableMeterMetrics("khermes-messages-meter")
+  lazy val kafkaClient = new KafkaClient[Object](hc.kafkaConfig)
+
   /**
    * Starts the thread.
    * @param hc with all configuration needed to start the thread.
@@ -109,10 +115,8 @@ class NodeExecutorThread(hc: AppConfig)(implicit config: Config) extends NodeExe
   //scalastyle:off
   override def run(): Unit = {
     running = true
-    val kafkaClient = new KafkaClient[Object](hc.kafkaConfig)
     val template = TwirlHelper.template[(Faker) => Txt](hc.templateContent, hc.templateName)
     val khermes = Faker(hc.khermesI18n, hc.strategy)
-
     val parserOption = hc.avroSchema.map(new Parser().parse(_))
 
     val timeoutNumberOfEventsOption = hc.timeoutNumberOfEventsOption
@@ -159,7 +163,7 @@ class NodeExecutorThread(hc: AppConfig)(implicit config: Config) extends NodeExe
       val json = template.static(khermes).toString()
       parserOption match {
         case None => {
-          kafkaClient.send(hc.topic, json)
+          kafkaClient.send(Some(hc.topic), json)
           increaseCounterMetric(messageSentCounterMetric)
           markMeterMetric(messageSentMeterMetric)
           performTimeout(numberOfEvents)
@@ -167,7 +171,7 @@ class NodeExecutorThread(hc: AppConfig)(implicit config: Config) extends NodeExe
 
         case Some(value) => {
           val record = converter.convertToGenericDataRecord(json.getBytes("UTF-8"), value)
-          kafkaClient.send(hc.topic, record)
+          kafkaClient.send(Some(hc.topic), record)
           increaseCounterMetric(messageSentCounterMetric)
           markMeterMetric(messageSentMeterMetric)
           performTimeout(numberOfEvents)

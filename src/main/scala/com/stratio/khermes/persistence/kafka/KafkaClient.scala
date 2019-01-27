@@ -11,17 +11,19 @@
 package com.stratio.khermes.persistence.kafka
 
 import java.util.Properties
-import java.util.concurrent.Future
 
+import com.stratio.khermes.persistence.KhermesSink
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord, RecordMetadata}
+
+import scala.concurrent.{ExecutionContext, Future}
 
 /**
  * Simple client used to send messages to a Kafka broker.
  * @param config with all Kafka configuration.
  */
-class KafkaClient[K](config: Config) extends LazyLogging {
+class KafkaClient[K](config: Config) extends KhermesSink[K, RecordMetadata] {
 
   lazy val producer: KafkaProducer[String, K] = new KafkaProducer(parseProperties())
 
@@ -47,8 +49,14 @@ class KafkaClient[K](config: Config) extends LazyLogging {
    * @param message with the message to send.
    * @return a future with the result of the operation.
    */
-  def send(topic: String, message: K): Future[RecordMetadata] = {
-    val a = new ProducerRecord[String, K](topic, message)
-    producer.send(a)
+  def send(topic: Option[String], message: K)(
+    implicit ec: ExecutionContext): Future[RecordMetadata] = {
+    Future {
+      producer.send(new ProducerRecord[String, K](topic.get, message)).get
+    }
+  }
+
+  def close(): Unit = {
+    logger.info("Closed Kafka native client")
   }
 }
