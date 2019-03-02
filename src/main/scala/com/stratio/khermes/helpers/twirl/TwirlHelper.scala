@@ -12,7 +12,8 @@ package com.stratio.khermes.helpers.twirl
 
 import java.io.File
 import java.lang.reflect.Method
-import java.net._
+import java.net.{URL, URLClassLoader}
+import java.security.CodeSource
 
 import com.stratio.khermes.commons.constants.AppConstants
 import com.typesafe.config.Config
@@ -20,6 +21,7 @@ import com.typesafe.scalalogging.LazyLogging
 import play.twirl.compiler.{GeneratedSource, TwirlCompiler}
 
 import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 import scala.reflect.internal.util.Position
 import scala.tools.nsc.reporters.ConsoleReporter
 import scala.tools.nsc.{Global, Settings}
@@ -41,7 +43,10 @@ object TwirlHelper extends LazyLogging {
    * @tparam T with the type of object to inject in the template.
    * @return a compiled and executed template.
    */
-  def template[T](template: String, templateName: String)(implicit config: Config): CompiledTemplate[T] = {
+  def template[T](
+    template: String,
+    templateName: String
+  )(implicit config: Config): CompiledTemplate[T] = {
     val templatesPath = config.getString("khermes.templates-path")
     val templatePath = s"$templatesPath/$templateName.scala.html"
     scala.tools.nsc.io.File(templatePath).writeAll(template)
@@ -56,7 +61,11 @@ object TwirlHelper extends LazyLogging {
     generatedDir.mkdirs()
 
     val helper = new CompilerHelper(sourceDir, generatedDir, generatedClasses)
-    helper.compile[T](s"$templateName.scala.html", s"html.$templateName", Seq("com.stratio.khermes.helpers.faker.Faker"))
+    helper.compile[T](
+      s"$templateName.scala.html",
+      s"html.$templateName",
+      Seq("com.stratio.khermes.helpers.faker.Faker")
+    )
   }
 
   /**
@@ -65,7 +74,11 @@ object TwirlHelper extends LazyLogging {
    * @param line that contains the error.
    * @param column that contains the error.
    */
-  case class CompilationError(message: String, line: Int, column: Int) extends RuntimeException(message)
+  case class CompilationError(
+    message: String,
+    line: Int,
+    column: Int
+  ) extends RuntimeException(message)
 
   /**
    * Deletes all content in a path.
@@ -82,48 +95,73 @@ object TwirlHelper extends LazyLogging {
    * @param generatedDir that contains scala files from the templates.
    * @param generatedClasses that contains class files with the result of the compilation.
    */
-  protected[this] class CompilerHelper(sourceDir: File, generatedDir: File, generatedClasses: File) {
+  protected[this] class CompilerHelper(
+    sourceDir: File,
+    generatedDir: File,
+    generatedClasses: File
+  ) {
+    private[this] val twirlCompilerClassName = "play.twirl.compiler.TwirlCompiler"
 
-    val twirlCompiler = TwirlCompiler
-    val classloader = new URLClassLoader(Array(generatedClasses.toURI.toURL),
-      Class.forName("play.twirl.compiler.TwirlCompiler").getClassLoader)
-    val compileErrors = new mutable.ListBuffer[CompilationError]
+    val twirlCompiler: TwirlCompiler.type = TwirlCompiler
+    val classloader: URLClassLoader = new URLClassLoader(
+      Array(generatedClasses.toURI.toURL),
+      Class.forName(twirlCompilerClassName).getClassLoader
+    )
+    val compileErrors: ListBuffer[CompilationError] = new mutable.ListBuffer[CompilationError]
 
-    val compiler = {
-      def additionalClassPathEntry: Option[String] = Some(
-        Class.forName("play.twirl.compiler.TwirlCompiler")
+    // Scala compiler object
+    val compiler: Global = {
+      def additionalClassPathEntry: Option[String] = Some {
+        Class.forName(twirlCompilerClassName)
           .getClassLoader.asInstanceOf[URLClassLoader]
-          .getURLs.map(url => new File(url.toURI)).mkString(":"))
+          .getURLs.map(url ⇒ new File(url.toURI)).mkString(":")
+      }
 
-      val settings = new Settings
-      val scalaObjectSource = Class.forName("scala.Option").getProtectionDomain.getCodeSource
+      val settings: Settings = new Settings
+      val scalaObjectSource: CodeSource = Class.forName("scala.Option")
+        .getProtectionDomain
+        .getCodeSource
 
-      val compilerPath = Class.forName("scala.tools.nsc.Interpreter").getProtectionDomain.getCodeSource.getLocation
-      val libPath = scalaObjectSource.getLocation
-      val pathList = List(compilerPath, libPath)
-      val originalBootClasspath = settings.bootclasspath.value
-      settings.bootclasspath.value =
-        ((originalBootClasspath :: pathList) ::: additionalClassPathEntry.toList) mkString File.pathSeparator
+      val compilerPath: URL = Class.forName("scala.tools.nsc.Interpreter")
+        .getProtectionDomain
+        .getCodeSource
+        .getLocation
+
+      val libPath: URL = scalaObjectSource.getLocation
+      val pathList: List[URL] = List(compilerPath, libPath)
+      val originalBootClasspath: String = settings.bootclasspath.value
+      settings.bootclasspath.value = {
+        (originalBootClasspath :: pathList) ::: additionalClassPathEntry.toList
+      } mkString File.pathSeparator
       settings.outdir.value = generatedClasses.getAbsolutePath
 
       new Global(settings, new ConsoleReporter(settings) {
-        override def printMessage(pos: Position, msg: String) = {
-          compileErrors.append(CompilationError(msg, pos.line, pos.point))
+        override def printMessage(position: Position, message: String) = {
+          compileErrors.append(CompilationError(message, position.line, position.point))
         }
       })
     }
 
-    def compile[T](templateName: String, className: String, additionalImports: Seq[String] = Nil): CompiledTemplate[T] = {
+    def compile[T](
+      templateName: String,
+      className: String,
+      additionalImports: Seq[String] = Nil
+    ): CompiledTemplate[T] = {
       val templateFile = new File(sourceDir, templateName)
-      val Some(generated) = twirlCompiler.compile(templateFile, sourceDir, generatedDir, "play.twirl.api.TxtFormat",
-        additionalImports = TwirlCompiler.DefaultImports ++ additionalImports)
+      val Some(generated) = twirlCompiler.compile(
+        templateFile,
+        sourceDir,
+        generatedDir,
+        "play.twirl.api.TxtFormat",
+        additionalImports = TwirlCompiler.DefaultImports ++ additionalImports
+      )
       val mapper = GeneratedSource(generated)
       val run = new compiler.Run
       compileErrors.clear()
       run.compile(List(generated.getAbsolutePath))
 
       compileErrors.headOption.foreach {
-        case CompilationError(msg, line, column) =>
+        case CompilationError(msg, line, column) ⇒
           compileErrors.clear()
           throw CompilationError(msg, mapper.mapLine(line), mapper.mapPosition(column))
       }
@@ -155,7 +193,9 @@ object TwirlHelper extends LazyLogging {
     //scalastyle:off
     def static: T = {
       if(declaredField.isEmpty) {
-        declaredField = Option(classloader.loadClass(className + "$").getDeclaredField("MODULE$").get(null))
+        declaredField = Option {
+          classloader.loadClass(className + "$").getDeclaredField("MODULE$").get(null)
+        }
         getF(declaredField.get)
       } else {
         getF(declaredField.get)
