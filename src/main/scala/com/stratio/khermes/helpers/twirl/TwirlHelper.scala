@@ -48,19 +48,19 @@ object TwirlHelper extends LazyLogging {
     templateName: String
   )(implicit config: Config): CompiledTemplate[T] = {
     val templatesPath = config.getString("khermes.templates-path")
-    val templatePath = s"$templatesPath/$templateName.scala.html"
+    val templatePath  = s"$templatesPath/$templateName.scala.html"
     scala.tools.nsc.io.File(templatePath).writeAll(template)
 
-    val sourceDir = new File(templatesPath)
-    val generatedDir = new File(s"$templatesPath/${AppConstants.GeneratedTemplatesPrefix}")
-    val generatedClasses = new File(s"$templatesPath/${AppConstants.GeneratedClassesPrefix}")
+    val sourceDirectory    = new File(templatesPath)
+    val generatedDirectory = new File(s"$templatesPath/${AppConstants.GeneratedTemplatesPrefix}")
+    val generatedClasses   = new File(s"$templatesPath/${AppConstants.GeneratedClassesPrefix}")
 
-    deleteRecursively(generatedDir)
+    deleteRecursively(generatedDirectory)
     deleteRecursively(generatedClasses)
     generatedClasses.mkdirs()
-    generatedDir.mkdirs()
+    generatedDirectory.mkdirs()
 
-    val helper = new CompilerHelper(sourceDir, generatedDir, generatedClasses)
+    val helper = CompilerHelper(sourceDirectory, generatedDirectory, generatedClasses)
     helper.compile[T](
       s"$templateName.scala.html",
       s"html.$templateName",
@@ -91,13 +91,13 @@ object TwirlHelper extends LazyLogging {
 
   /**
    * Helper used to compile templates internally.
-   * @param sourceDir that contains original templates.
-   * @param generatedDir that contains scala files from the templates.
+   * @param sourceDirectory that contains original templates.
+   * @param generatedDirectory that contains scala files from the templates.
    * @param generatedClasses that contains class files with the result of the compilation.
    */
   protected[this] class CompilerHelper(
-    sourceDir: File,
-    generatedDir: File,
+    sourceDirectory: File,
+    generatedDirectory: File,
     generatedClasses: File
   ) {
     private[this] val twirlCompilerClassName = "play.twirl.compiler.TwirlCompiler"
@@ -147,11 +147,11 @@ object TwirlHelper extends LazyLogging {
       className: String,
       additionalImports: Seq[String] = Nil
     ): CompiledTemplate[T] = {
-      val templateFile = new File(sourceDir, templateName)
+      val templateFile = new File(sourceDirectory, templateName)
       val Some(generated) = twirlCompiler.compile(
         templateFile,
-        sourceDir,
-        generatedDir,
+        sourceDirectory,
+        generatedDirectory,
         "play.twirl.api.TxtFormat",
         additionalImports = TwirlCompiler.DefaultImports ++ additionalImports
       )
@@ -167,6 +167,14 @@ object TwirlHelper extends LazyLogging {
       }
       new CompiledTemplate[T](className, classloader)
     }
+  }
+
+  protected[this] object CompilerHelper {
+    def apply(
+      sourceDirectory:    File,
+      generatedDirectory: File,
+      generatedClasses:   File
+    ): CompilerHelper = new CompilerHelper(sourceDirectory, generatedDirectory, generatedClasses)
   }
 
   /**
