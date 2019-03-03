@@ -12,8 +12,9 @@ package com.stratio.khermes.helpers.twirl
 
 import java.io.File
 import java.lang.reflect.Method
+import java.math.BigInteger
 import java.net.{URL, URLClassLoader}
-import java.security.CodeSource
+import java.security.{CodeSource, MessageDigest}
 
 import com.stratio.khermes.commons.constants.AppConstants
 import com.typesafe.config.Config
@@ -22,9 +23,11 @@ import play.twirl.compiler.{GeneratedSource, TwirlCompiler}
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
+import scala.io.Source
 import scala.reflect.internal.util.Position
 import scala.tools.nsc.reporters.ConsoleReporter
 import scala.tools.nsc.{Global, Settings}
+import scala.tools.nsc.io.{File ⇒ ScalaFile}
 
 /**
  * Helper used to parse and compile templates using Twirl.
@@ -37,23 +40,30 @@ object TwirlHelper extends LazyLogging {
    * Step 2) The engine generates a scala files to be compiled.
    * Step 3) The engine compiles the scala files generated in the previous step.
    * Step 4) Finally it executes the compiled files interpolating values with the template.
-   * @param template a string with the template.
+   * @param templateContent a string represents the content of the given template.
    * @param templateName the name of the file that will contain the content of the template.
    * @param config with Khermes' configuration.
    * @tparam T with the type of object to inject in the template.
    * @return a compiled and executed template.
    */
   def template[T](
-    template: String,
-    templateName: String
+    templateContent: String,
+    templateName: String,
+    compilationId: String = "default"
   )(implicit config: Config): CompiledTemplate[T] = {
-    val templatesPath = config.getString("khermes.templates-path")
-    val templatePath  = s"$templatesPath/$templateName.scala.html"
-    scala.tools.nsc.io.File(templatePath).writeAll(template)
+    import AppConstants._
 
-    val sourceDirectory    = new File(templatesPath)
-    val generatedDirectory = new File(s"$templatesPath/${AppConstants.GeneratedTemplatesPrefix}")
-    val generatedClasses   = new File(s"$templatesPath/${AppConstants.GeneratedClassesPrefix}")
+    val templatesPath = config.getString("khermes.templates-path")
+    outputTemplateToDisk(templateContent, templateName, templatesPath)
+
+    // Where twirl template source files (e.g., foo.scala.html) reside
+    val sourceDirectory = new File(templatesPath)
+    // Where generated Scala files (e.g., foo.template.scala) reside
+    val generatedDirectory =
+      new File(s"$templatesPath/${GeneratedTemplatesPrefix}/${compilationId}") // *.scala
+    // Where *.class files (e.g., after compiling foo.template.scala) reside
+    val generatedClasses =
+      new File(s"$templatesPath/${GeneratedClassesPrefix}/${compilationId}")   // *.class
 
     deleteRecursively(generatedDirectory)
     deleteRecursively(generatedClasses)
@@ -61,11 +71,25 @@ object TwirlHelper extends LazyLogging {
     generatedDirectory.mkdirs()
 
     val helper = CompilerHelper(sourceDirectory, generatedDirectory, generatedClasses)
-    helper.compile[T](
+    val compiledTemplate = helper.compile[T](
       s"$templateName.scala.html",
       s"html.$templateName",
       Seq("com.stratio.khermes.helpers.faker.Faker")
     )
+    compiledTemplate
+  }
+
+  private[this] def outputTemplateToDisk(content: String, name: String, paths: String): Unit = {
+    val filename = s"${paths}/${name}.scala.html"
+    val file     = ScalaFile(filename)
+    if (file.exists) {
+      if (sha256(content) != sha256(Source.fromFile(filename).mkString)) file.writeAll(content)
+    } else file.writeAll(content)
+  }
+
+  protected[this] def sha256(s: String): String = {
+    val hash = new BigInteger(1, MessageDigest.getInstance("SHA-256").digest(s.getBytes("UTF-8")))
+    String.format("%032x", hash)
   }
 
   /**
