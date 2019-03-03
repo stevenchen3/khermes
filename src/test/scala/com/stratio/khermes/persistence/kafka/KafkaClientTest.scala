@@ -12,6 +12,7 @@ package com.stratio.khermes.persistence.kafka
 
 import java.util.UUID
 
+import com.stratio.khermes.commons.implicits.AppImplicits
 import com.stratio.khermes.utils.EmbeddedServersUtils
 import com.typesafe.scalalogging.LazyLogging
 import org.junit.runner.RunWith
@@ -37,10 +38,11 @@ class KafkaClientTest extends FlatSpec
   }
 
   it should "produce messages in a topic" in {
+    import AppImplicits._
     withEmbeddedKafkaServer(Seq(Topic)) { kafkaServer =>
       withKafkaClient[Object](kafkaServer) { kafkaClient =>
         (1 to NumberOfMessages).foreach(_ => {
-          kafkaClient.send(Topic, Message)
+          kafkaClient.send(Some(Topic), Message)
         })
         kafkaClient.producer.flush()
         kafkaClient.producer.close()
